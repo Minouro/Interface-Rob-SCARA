@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Robô SCARA</title>
+    <style>
+        html { font-family: 'Segoe UI', Roboto, sans-serif; box-sizing: border-box; } 
+        body { 
+            background-color: #f0f2f5; 
+            color: #333; 
+            margin: 0; 
+            padding: 0; 
+            overflow-y: auto;
+            display: flex; 
+            flex-direction: column; 
+        } 
+        #status-bar { padding: 8px; text-align: center; font-weight: bold; transition: background-color 0.5s ease, color 0.5s ease; flex-shrink: 0; } 
+        #status-bar.connecting { background-color: #f1c40f; color: #333; } 
+        #status-bar.connected { background-color: #2ecc71; color: white; } 
+        #status-bar.disconnected { background-color: #e74c3c; color: white; } 
+        .content-wrapper { padding: 20px; flex-grow: 1; display: flex; flex-direction: column; min-height: 0; } 
+        h2 { text-align: center; width: 100%; color: #1a237e; margin-bottom: 20px; flex-shrink: 0; } 
+        #main-container { display: flex; justify-content: space-around; align-items: stretch; gap: 20px; width: 100%; flex-grow: 1; min-height: 0; } 
+        #dials-container { flex: 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: center; justify-items: center; } 
+        #sliders-container { flex: 1; display: flex; flex-direction: column; justify-content: space-around; align-items: center; gap: 20px; background-color: #ffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-radius: 8px; padding: 20px; } 
+        .control-container { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%; position: relative; } 
+        .control-container canvas { 
+            background-color: #ffffff; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
+            border-radius: 50%; 
+            aspect-ratio: 1 / 1; 
+            width: 90%; 
+            max-width: 30vh;
+            cursor: grab; 
+            transition: box-shadow 0.3s ease; 
+        } 
+        .control-container canvas:hover { box-shadow: 0 6px 12px rgba(0,0,0,0.15); } 
+        .control-container canvas:active { cursor: grabbing; } 
+        .control-label { margin-top: 10px; font-weight: bold; color: #555; font-size: 1.2em; } 
+        .slider-wrapper { width: 100%; height: 50%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px;} 
+        .slider-wrapper.vertical { flex-direction: row; } 
+        .slider-wrapper label, .gripper-switch-container label { font-weight: bold; color: #555; }
+        .slider-wrapper.vertical label { writing-mode: vertical-rl; transform: rotate(180deg); } 
+        input[type="range"] { -webkit-appearance: none; appearance: none; background: #ddd; outline: none; border-radius: 10px; } 
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; border-radius: 50%; cursor: pointer; } 
+        input[type="range"]::-moz-range-thumb { border-radius: 50%; cursor: pointer; } 
+        #z-slider { width: 80%; height: 15px; cursor: pointer; transform: rotate(-90deg); }
+        #z-slider::-webkit-slider-thumb { width: 30px; height: 30px; background: #c03b; } 
+        #z-slider::-moz-range-thumb { width: 30px; height: 30px; background: #c0392b; }
+        #info-panel { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #fff; background-color: rgba(0, 0, 0, 0.6); padding: 8px 15px; border-radius: 5px; pointer-events: none; font-family: 'Courier New', Courier, monospace; text-align: center; z-index: 1000; } 
+        
+        .gripper-switch-container { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .switch { position: relative; display: inline-block; width: 100px; height: 50px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 25px; }
+        .switch-slider:before { position: absolute; content: ""; height: 42px; width: 42px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .switch-slider { background-color: #2980b9; }
+        input:checked + .switch-slider:before { transform: translateX(50px); }
+
+        .sequencer-container {
+            background-color: #ffffff;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #positions-textarea {
+            width: 100%;
+            min-height: 150px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+            box-sizing: border-box;
+        }
+        .sequencer-controls, .playback-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        .sequencer-container button {
+            padding: 10px 20px;
+            font-size: 1em;
+            font-weight: bold;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.1s ease;
+        }
+        .sequencer-container button:active { transform: scale(0.98); }
+        .sequencer-container button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+            transform: scale(1);
+        }
+        #record-pos-btn { background-color: #27ae60; }
+        #record-pos-btn:hover:not(:disabled) { background-color: #2ecc71; }
+        #play-seq-btn { background-color: #2980b9; }
+        #play-seq-btn:hover:not(:disabled) { background-color: #3498db; }
+        #play-rev-btn { background-color: #f39c12; }
+        #play-rev-btn:hover:not(:disabled) { background-color: #f1c40f; }
+        #play-loop-btn { background-color: #8e44ad; }
+        #play-loop-btn:hover:not(:disabled) { background-color: #9b59b6; }
+        #stop-playback-btn { background-color: #c0392b; }
+        #stop-playback-btn:hover:not(:disabled) { background-color: #e74c3c; }
+        #clear-all-btn { background-color: #7f8c8d; }
+        #clear-all-btn:hover:not(:disabled) { background-color: #95a5a6; }
+
+        @media (max-width: 900px) { #main-container { flex-direction: column; align-items: center; } #dials-container { grid-template-columns: 1fr; width: 80%; max-width: 300px; } #sliders-container { flex-direction: row; width: 90%; padding: 10px; } .slider-wrapper.vertical { flex-direction: column-reverse; } .slider-wrapper.vertical label { writing-mode: horizontal-tb; transform: none; } #z-slider { transform: none; } }
+    </style>
+</head>
+<body>
+    <div id="status-bar" class="connecting">Aguardando conexão com o servidor...</div>
+    <div class="content-wrapper">
+        <h2>Painel de Controle - Robô SCARA</h2>
+        <div id="main-container">
+            <div id="dials-container">
+                <div class="control-container">
+                    <canvas id="junta1-canvas" data-control="theta1_deg" data-max="360"></canvas>
+                    <p class="control-label">Junta 1</p>
+                </div>
+                <div class="control-container">
+                    <canvas id="junta2-canvas" data-control="theta2_deg" data-max="180"></canvas>
+                    <p class="control-label">Junta 2</p>
+                </div>
+                <div class="control-container">
+                    <canvas id="phi-canvas" data-control="phi_deg" data-max="360"></canvas>
+                    <p class="control-label">Base Robô (Phi)</p>
+                </div>
+            </div>
+            <div id="sliders-container">
+                 <div class="slider-wrapper vertical">
+                    <label for="z-slider">Eixo Z</label>
+                    <input type="range" min="0" max="200" value="100" id="z-slider">
+                </div>
+                <div class="gripper-switch-container">
+                    <label for="gripper-switch">Abertura Garra</label>
+                    <label class="switch">
+                        <input type="checkbox" id="gripper-switch">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                </div>
+        </div>
+    </div>
+    <div id="info-panel"></div>
+    
+    <div class="sequencer-container">
+        <h2>Sequenciador de Posições</h2>
+        <textarea id="positions-textarea" readonly placeholder="As posições gravadas aparecerão aqui..."></textarea>
+        <div class="sequencer-controls">
+            <button id="record-pos-btn">✔️ Gravar Posição Atual</button>
+            <button id="clear-all-btn" disabled>🗑️ Apagar Tudo</button>
+        </div>
+        <div class="playback-controls">
+            <button id="play-seq-btn" disabled>▶️ Reproduzir Sequência</button>
+            <button id="play-rev-btn" disabled>⏪ Reproduzir Inverso</button>
+            <button id="play-loop-btn" disabled>🔁 Reproduzir em Loop</button>
+            <button id="stop-playback-btn" disabled>⏹️ Parar Reprodução</button>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const statusBar = document.getElementById('status-bar');
+    const infoPanel = document.getElementById('info-panel');
+    const dials = {
+        theta1: document.getElementById('junta1-canvas'),
+        theta2: document.getElementById('junta2-canvas'),
+        phi: document.getElementById('phi-canvas')
+    };
+    const sliders = { z: document.getElementById('z-slider') };
+    const gripperSwitch = document.getElementById('gripper-switch');
+    const robotState = { x: 0.0, y: 0.0, z: 100.0, gripper: 0, phi_deg: 0.0, theta1_deg: 0.0, theta2_deg: 0.0 };
+    let isInteracting = false;
+    const contexts = {
+        theta1: dials.theta1.getContext('2d'),
+        theta2: dials.theta2.getContext('2d'),
+        phi: dials.phi.getContext('2d')
+    };
+    const L1_fisico = 228.0, L2_fisico = 136.5;
+
+    const recordPosBtn = document.getElementById('record-pos-btn');
+    const clearAllBtn = document.getElementById('clear-all-btn');
+    const positionsTextarea = document.getElementById('positions-textarea');
+    const playSeqBtn = document.getElementById('play-seq-btn');
+    const playRevBtn = document.getElementById('play-rev-btn');
+    const playLoopBtn = document.getElementById('play-loop-btn');
+    const stopPlaybackBtn = document.getElementById('stop-playback-btn');
+    const recordedPositions = [];
+    let isPlaying = false;
+
+    // ======================= INÍCIO DA CORREÇÃO: LÓGICA DE ESPERA =======================
+    let movementCompletionResolver = null;
+
+    // Função que retorna uma Promise que será resolvida quando o robô confirmar a posição.
+    function waitForMovementCompletion(timeout = 10000) { // Timeout de 10 segundos
+        return new Promise((resolve, reject) => {
+            const timeoutId = setTimeout(() => {
+                movementCompletionResolver = null; 
+                reject(new Error('Tempo de espera pelo robô excedido.'));
+            }, timeout);
+
+            movementCompletionResolver = () => {
+                clearTimeout(timeoutId);
+                resolve();
+            };
+        });
+    }
+    // ======================= FIM DA CORREÇÃO ==========================================
+
+    function setControlsDisabled(disabled) {
+        Object.values(dials).forEach(canvas => canvas.style.pointerEvents = disabled ? 'none' : 'auto');
+        Object.values(sliders).forEach(slider => slider.disabled = disabled);
+        gripperSwitch.disabled = disabled;
+        recordPosBtn.disabled = disabled;
+        if (disabled) {
+            playSeqBtn.disabled = true;
+            playRevBtn.disabled = true;
+            playLoopBtn.disabled = true;
+            clearAllBtn.disabled = true;
+        } else {
+            updatePlaybackButtonsState();
+        }
+    }
+
+    function updatePlaybackButtonsState() {
+        const hasPositions = recordedPositions.length > 0;
+        playSeqBtn.disabled = !hasPositions;
+        playRevBtn.disabled = !hasPositions;
+        playLoopBtn.disabled = !hasPositions;
+        clearAllBtn.disabled = !hasPositions;
+    }
+
+    function recordCurrentPosition() {
+        const posString = [
+            robotState.theta1_deg.toFixed(4),
+            robotState.theta2_deg.toFixed(4),
+            robotState.phi_deg.toFixed(4),
+            robotState.z.toFixed(4),
+            robotState.gripper
+        ].join(',');
+        recordedPositions.push(posString);
+        positionsTextarea.value = recordedPositions.join('\n');
+        positionsTextarea.scrollTop = positionsTextarea.scrollHeight;
+        updatePlaybackButtonsState();
+    }
+
+    function clearPositions() {
+        recordedPositions.length = 0;
+        positionsTextarea.value = '';
+        updatePlaybackButtonsState();
+    }
+
+    // ======================= INÍCIO DA CORREÇÃO: LÓGICA DE REPRODUÇÃO ==================
+    async function playSequence(positions, loop = false) {
+        if (isPlaying || positions.length === 0) return;
+        isPlaying = true;
+        stopPlaybackBtn.disabled = false;
+        setControlsDisabled(true);
+        try {
+            do {
+                for (const pos of positions) {
+                    if (!isPlaying) break;
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(pos);
+                    }
+                    
+                    // Espera pela confirmação do robô, com timeout
+                    try {
+                        await waitForMovementCompletion(); 
+                    } catch (error) {
+                        console.error("Parando a reprodução devido a um erro:", error.message);
+                        statusBar.textContent = `⚠️ ERRO: ${error.message}`;
+                        statusBar.className = 'disconnected';
+                        isPlaying = false; 
+                    }
+                }
+            } while (loop && isPlaying);
+        } finally {
+            isPlaying = false;
+            stopPlaybackBtn.disabled = true;
+            setControlsDisabled(false);
+        }
+    }
+    // ======================= FIM DA CORREÇÃO ==========================================
+
+    recordPosBtn.addEventListener('click', recordCurrentPosition);
+    clearAllBtn.addEventListener('click', clearPositions);
+    playSeqBtn.addEventListener('click', () => playSequence(recordedPositions, false));
+    playRevBtn.addEventListener('click', () => playSequence([...recordedPositions].reverse(), false));
+    playLoopBtn.addEventListener('click', () => playSequence(recordedPositions, true));
+    stopPlaybackBtn.addEventListener('click', () => { if (isPlaying) { isPlaying = false; }});
+
+    function setupCanvasSizes() {
+        Object.values(dials).forEach(canvas => {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const size = Math.min(rect.width, rect.height) * 0.9;
+            canvas.width = size;
+            canvas.height = size;
+        });
+        updateAllViews();
+    }
+
+    const socket = new WebSocket('ws://' + window.location.host + '/ws/robot/');
+    socket.onopen = () => statusBar.textContent = "Conexão com servidor estabelecida. Aguardando Arduino...";
+    socket.onclose = () => {
+        statusBar.textContent = "Servidor desconectado. Tente recarregar a página.";
+        statusBar.className = 'disconnected';
+    };
+
+    // ======================= INÍCIO DA CORREÇÃO: LÓGICA DE MENSAGEM ===================
+    socket.onmessage = (e) => {
+        const content = JSON.parse(e.data);
+        if (content.type === 'connection_status') {
+            statusBar.textContent = content.message;
+            statusBar.className = content.status;
+        } else if (content.type === 'robot_status' && content.data.startsWith('pos:')) {
+            // Se a função de playback está esperando, resolve a Promise.
+            if (isPlaying && movementCompletionResolver) {
+                movementCompletionResolver();
+                movementCompletionResolver = null;
+            }
+
+            // Atualiza a interface se o usuário não estiver interagindo manualmente.
+            if (!isInteracting) {
+                const parts = content.data.replace('pos:', '').split(',');
+                if (parts.length === 5) {
+                    robotState.theta1_deg = parseFloat(parts[0]);
+                    robotState.theta2_deg = parseFloat(parts[1]);
+                    robotState.phi_deg = parseFloat(parts[2]);
+                    robotState.z = parseFloat(parts[3]);
+                    robotState.gripper = parseInt(parts[4]);
+                    calculateForwardKinematics();
+                    updateAllViews();
+                }
+            }
+        }
+    };
+    // ======================= FIM DA CORREÇÃO ==========================================
+    
+    function sendMovementStateToServer() {
+        if (socket.readyState === WebSocket.OPEN) {
+            const commandString = `S${[
+                robotState.theta1_deg.toFixed(4),
+                robotState.theta2_deg.toFixed(4),
+                robotState.phi_deg.toFixed(4),
+                robotState.z.toFixed(4)
+            ].join(',')}`;
+            socket.send(commandString);
+        }
+    }
+
+    function sendGripperStateToServer() {
+        if (socket.readyState === WebSocket.OPEN) {
+            const commandString = `G${robotState.gripper}`;
+            socket.send(commandString);
+        }
+    }
+
+    function calculateForwardKinematics() {
+        const t1_rad = robotState.theta1_deg * Math.PI / 180;
+        const t2_rad = robotState.theta2_deg * Math.PI / 180;
+        robotState.x = L1_fisico * Math.cos(t1_rad) + L2_fisico * Math.cos(t1_rad + t2_rad);
+        robotState.y = L1_fisico * Math.sin(t1_rad) + L2_fisico * Math.sin(t1_rad + t2_rad);
+    }
+    
+    function drawDial(ctx, value, maxValue, label, color) {
+        const width = ctx.canvas.width;
+        const height = ctx.canvas.height;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = width / 2 * 0.8;
+        ctx.clearRect(0, 0, width, height);
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width * 0.15;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius - (ctx.lineWidth/2), 0, 2 * Math.PI);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        const angle = (value / maxValue) * 2 * Math.PI - (Math.PI / 2);
+        const indicatorX = centerX + radius * 0.8 * Math.cos(angle);
+        const indicatorY = centerY + radius * 0.8 * Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(indicatorX, indicatorY);
+        ctx.strokeStyle = '#34495e';
+        ctx.lineWidth = width * 0.06;
+        ctx.stroke();
+        ctx.fillStyle = '#34495e';
+        ctx.font = `bold ${width*0.2}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${Math.round(value)}°`, centerX, centerY + radius * 0.5); 
+    }
+
+    function updateAllViews() {
+        drawDial(contexts.theta1, robotState.theta1_deg, 360, "J1", "#e74c3c");
+        drawDial(contexts.theta2, robotState.theta2_deg, 180, "J2", "#f39c12");
+        drawDial(contexts.phi,   robotState.phi_deg,   360, "Phi", "#3498db");
+        sliders.z.value = 200 - robotState.z;
+        gripperSwitch.checked = robotState.gripper > 90;
+        infoPanel.innerHTML = `
+            X: ${robotState.x.toFixed(1)} mm | Y: ${robotState.y.toFixed(1)} mm | Z: ${robotState.z.toFixed(1)} mm<br>
+            θ1: ${robotState.theta1_deg.toFixed(1)}° | θ2: ${robotState.theta2_deg.toFixed(1)}° | φ: ${robotState.phi_deg.toFixed(1)}° | G: ${robotState.gripper}
+        `;
+    }
+
+    function updateDialState(canvas, event) {
+        const rect = canvas.getBoundingClientRect();
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const evt = event.touches ? event.touches[0] : event;
+        const x_vec = evt.clientX - rect.left - centerX;
+        const y_vec = evt.clientY - rect.top - centerY;
+        const controlVar = canvas.dataset.control;
+        const maxVal = parseFloat(canvas.dataset.max);
+        let angle_deg = Math.atan2(y_vec, x_vec) * (180 / Math.PI) + 90;
+        let normalized_angle = ((angle_deg % 360) + 360) % 360;
+        robotState[controlVar] = (normalized_angle / 360) * maxVal;
+        calculateForwardKinematics();
+        updateAllViews();
+        sendMovementStateToServer();
+    }
+    
+    Object.values(dials).forEach(canvas => {
+        canvas.addEventListener('mousedown', (e) => {
+            isInteracting = true;
+            updateDialState(e.currentTarget, e);
+        });
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            isInteracting = true;
+            updateDialState(e.currentTarget, e);
+        });
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isInteracting) return;
+        const dialUnderMouse = document.elementFromPoint(e.clientX, e.clientY);
+        if (dialUnderMouse && dialUnderMouse.tagName === 'CANVAS') {
+            updateDialState(dialUnderMouse, e);
+        }
+    });
+    
+    window.addEventListener('touchmove', (e) => {
+        if (!isInteracting) return;
+        
+        const touch = e.touches[0];
+        const elementUnderTouch = document.elementFromPoint(touch.clientX, touch.clientY);
+
+        if (elementUnderTouch && elementUnderTouch.tagName === 'CANVAS') {
+            e.preventDefault();
+            updateDialState(elementUnderTouch, e);
+        }
+    }, { passive: false });
+
+    Object.values(sliders).forEach(slider => {
+        slider.addEventListener('mousedown', () => { isInteracting = true; });
+        slider.addEventListener('touchstart', () => { isInteracting = true; });
+        slider.addEventListener('input', (e) => {
+            if (e.currentTarget.id === 'z-slider') {
+                robotState.z = 200 - parseFloat(e.currentTarget.value);
+            }
+            updateAllViews();
+            sendMovementStateToServer();
+        });
+    });
+    
+    gripperSwitch.addEventListener('change', (e) => {
+        robotState.gripper = e.currentTarget.checked ? 180 : 0;
+        updateAllViews();
+        sendGripperStateToServer();
+    });
+
+    window.addEventListener('mouseup', () => { isInteracting = false; });
+    window.addEventListener('touchend', () => { isInteracting = false; });
+    
+    window.addEventListener('resize', setupCanvasSizes);
+    calculateForwardKinematics();
+    setupCanvasSizes();
+});
+</script>
+</body>
+</html>
