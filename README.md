@@ -12,4 +12,4 @@ python run.py
 ```
 
 # Carregar Código no Arduino
-Pelo Arduino IDE, carregue o código `robo_washington.ido`
+Pelo Arduino IDE, carregue o código `robo_washington.ino`
