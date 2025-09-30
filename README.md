@@ -10,3 +10,6 @@ Obs: Instale `requirements.txt` apenas uma vez!
 ```
 python run.py
 ```
+
+# Carregar Código no Arduino
+Pelo Arduino IDE, carregue o código `robo_washington.ido`
